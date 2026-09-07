@@ -52,6 +52,34 @@ async function waitForRunToFinish(
   return await heartbeat.getRun(runId);
 }
 
+function isForeignKeyViolation(err: unknown): boolean {
+  const candidates = [err, (err as { cause?: unknown } | null)?.cause];
+  return candidates.some((candidate) => {
+    if (!candidate || typeof candidate !== "object") return false;
+    const code = (candidate as { code?: unknown }).code;
+    const message = (candidate as { message?: unknown }).message;
+    return code === "23503" || (typeof message === "string" && message.includes("violates foreign key constraint"));
+  });
+}
+
+// FORK-NOTE (8a.1, 2026-09-07): executeRun keeps writing heartbeat_run_events (terminal lifecycle,
+// liveness, retry scheduling) after the run row has already left "running", so a test that returns as
+// soon as waitForRunToFinish sees a terminal status can race this cleanup: the late event insert lands
+// between the events delete and the runs delete and the runs delete fails on the FK. Reproduced 1 in 3
+// on the validate clone. Retry the pair until no late write lands between the two deletes.
+async function deleteRunsWithLateWriteRetry(db: ReturnType<typeof createDb>) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await db.delete(heartbeatRunEvents);
+      await db.delete(heartbeatRuns);
+      return;
+    } catch (err) {
+      if (attempt >= 40 || !isForeignKeyViolation(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
   let db!: ReturnType<typeof createDb>;
   let heartbeat!: ReturnType<typeof heartbeatService>;
@@ -88,12 +116,11 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
 
   afterEach(async () => {
     await db.delete(activityLog);
-    await db.delete(heartbeatRunEvents);
     await db.delete(environmentLeases);
     await db.delete(issueRelations);
     await db.delete(issues);
     await db.delete(activityLog);
-    await db.delete(heartbeatRuns);
+    await deleteRunsWithLateWriteRetry(db);
     await db.delete(agentWakeupRequests);
     await db.delete(agentRuntimeState);
     await db.delete(budgetPolicies);
