@@ -52,6 +52,9 @@ const mockIssueService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock("../services/index.js", () => ({
+  // FORK-NOTE (8b, 2026-09-26): upstream 710 (Skill Studio, #9241) constructs companySkillService in the issues
+  // router, so this fork test's explicit services mock must provide it (register B10 fixture drift).
+  companySkillService: () => ({}),
   documentAnnotationService: () => ({}),
   clampIssueListLimit: () => ({}),
   companySearchService: () => ({}),

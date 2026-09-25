@@ -33,7 +33,7 @@ function createSelectChain(rowsForTable: (table: unknown) => unknown[]) {
 function createDbState(input: {
   agent: { id: string; companyId: string; status?: string };
   agentKey?: { id: string; agentId: string; companyId: string; keyHash: string; responsibleUserId?: string | null };
-  run?: { id: string; companyId: string; agentId: string; responsibleUserId?: string | null };
+  run?: { id: string; companyId: string; agentId: string; responsibleUserId?: string | null; status?: string };
 }) {
   const activity: Array<Record<string, unknown>> = [];
   const agentRow = {
@@ -58,6 +58,10 @@ function createDbState(input: {
         companyId: input.run.companyId,
         agentId: input.run.agentId,
         responsibleUserId: input.run.responsibleUserId ?? null,
+        // FORK-NOTE (8b, 2026-09-26): the fork binds agent JWTs to a live run (status queued or running) and
+        // answers 401 otherwise (register V9, F10). Upstream's fixture rows carry no status, so they exercised the
+        // fork's rejection path instead of the behaviour under test. A live run is the realistic default.
+        status: input.run.status ?? "running",
       }
     : null;
 
