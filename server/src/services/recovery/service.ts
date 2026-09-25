@@ -73,11 +73,6 @@ import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js"
 
 const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const UNSUCCESSFUL_HEARTBEAT_RUN_TERMINAL_STATUSES = ["interrupted", "failed", "cancelled", "timed_out"] as const;
-const CONTEXT_OVERFLOW_FAILURE_PATTERN = /(context window|adapter_failed.*context|maximum context length)/i;
-const STREAM_DISCONNECT_FAILURE_PATTERN =
-  /(stream disconnected before completion|response\.failed event received|transport error:\s*timeout|adapter_failed\s*[-–]\s*stream\s+disconnected|HTTP[/ ]\s*5\d\d)/i;
-const AUTO_RESET_WINDOW_MS = 60 * 60 * 1000;
-const AUTO_RESET_LIMIT_PER_HOUR = 2;
 const STREAM_DISCONNECT_RETRY_LIMIT = 2;
 const STREAM_DISCONNECT_RETRY_DELAY_MS_MIN = 10_000;
 const STREAM_DISCONNECT_RETRY_DELAY_MS_MAX = 15_000;
@@ -456,19 +451,6 @@ function isRepeatedProductiveContinuationRecovery(latestRun: SuccessfulLatestIss
     isProductiveContinuationRun(latestRun);
 }
 
-function isPinnedLiveChatAnchorIssue(issue: Pick<typeof issues.$inferSelect, "title" | "description">) {
-  const title = issue.title.trim().toLowerCase();
-  const text = `${title}\n${issue.description ?? ""}`.toLowerCase();
-  const explicitlyPinned = title.startsWith("[pin open]") || /\bpin(?:ned)?\s+open\b/.test(text);
-  if (!explicitlyPinned) return false;
-  return (
-    /\bchat\s+mirror\b/.test(text) ||
-    /\bchat\s+anchor\b/.test(text) ||
-    /\blive\s+teams\s+chat\b/.test(text) ||
-    /\btickets\s+only\b/.test(text)
-  );
-}
-
 function parseLivenessIncidentKey(incidentKey: string | null | undefined) {
   if (!incidentKey) return null;
   return parseIssueGraphLivenessIncidentKey(incidentKey);
@@ -577,43 +559,18 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     return typeof value === "string" && value.length > 0 ? value : null;
   }
 
-  function matchesStreamDisconnectFailure(reason: string | null | undefined) {
-    return Boolean(reason && STREAM_DISCONNECT_FAILURE_PATTERN.test(reason));
-  }
-
-  function matchesContextOverflowFailure(reason: string | null | undefined) {
-    return Boolean(reason && CONTEXT_OVERFLOW_FAILURE_PATTERN.test(reason));
-  }
-
   function readRecoveryRetryCount(contextSnapshot: unknown) {
     const context = parseObject(contextSnapshot);
     const raw = context.retry_count;
     return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 0;
   }
 
-  function readAutoResetState(stateJson: Record<string, unknown> | null | undefined) {
-    const root = parseObject(stateJson);
-    const recovery = parseObject(root.autoRecovery);
-    const contextOverflow = parseObject(recovery.contextOverflow);
-    const windowStartedAt = readNonEmptyString(contextOverflow.windowStartedAt) ?? undefined;
-    const attempts =
-      typeof contextOverflow.attempts === "number" && Number.isFinite(contextOverflow.attempts)
-        ? Math.max(0, Math.floor(contextOverflow.attempts))
-        : 0;
-    return { windowStartedAt, attempts };
-  }
-
-  function nextAutoResetState(current: { windowStartedAt?: string; attempts?: number }, now: Date) {
-    const windowStartedAt = current.windowStartedAt ? new Date(current.windowStartedAt) : null;
-    const inWindow = windowStartedAt && now.getTime() - windowStartedAt.getTime() < AUTO_RESET_WINDOW_MS;
-    const attemptsInWindow = inWindow ? (current.attempts ?? 0) + 1 : 1;
-    const nextState = {
-      windowStartedAt: inWindow ? current.windowStartedAt! : now.toISOString(),
-      attempts: attemptsInWindow,
-    };
-    return { nextState, attemptsInWindow };
-  }
-
+  // FORK-NOTE (8b, 2026-09-26): the reconcile-path stream-disconnect and context-overflow auto-recovery helpers
+  // (matchesStreamDisconnectFailure, matchesContextOverflowFailure, readAutoResetState, nextAutoResetState) and
+  // isPinnedLiveChatAnchorIssue were retired here under Jason's option (a) of 7 Sep 2026: their call sites were
+  // lost at the hop 6 merge (28e386d5a) and upstream's continuation recovery serves the reconcile path. The two
+  // state helpers below stay because the silent-hang watchdog (scanAdapterSilentHangs, ITO-2214) calls them.
+  // The finalisation-path copies in heartbeat.ts (releaseIssueExecutionAndPromote) are live and unchanged.
   function readStreamDisconnectState(stateJson: Record<string, unknown> | null | undefined) {
     const root = parseObject(stateJson);
     const recovery = parseObject(root.autoRecovery);
