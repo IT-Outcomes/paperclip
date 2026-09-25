@@ -77,6 +77,8 @@ const PLAN_TASK_DESCRIPTION_RE =
   /\b(?:create|write|produce|draft|update|revise|prepare)\s+(?:a\s+|the\s+)?(?:plan|analysis|investigation|research report|report|proposal|design doc|write-?up)\b/i;
 const EXECUTION_CLAIM_RE =
   /\b(?:i\s+)?(?:implemented|fixed|updated|changed|created|added|removed|deleted|wrote|committed|pushed|opened|merged|deployed|ran|executed|tested|verified|validated|built|linted|type-?checked|created\s+(?:a\s+)?(?:pr|pull request|ticket|issue)|opened\s+(?:a\s+)?(?:pr|pull request))\b/i;
+const UNMANAGED_BACKGROUND_TASK_STOP_REASON = "unmanaged_background_task_stopped";
+const UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON = "unmanaged background task stopped; no durable live path";
 
 function compactReason(reason: string) {
   return reason.length <= 500 ? reason : `${reason.slice(0, 497)}...`;
@@ -94,6 +96,17 @@ function readText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function hasUnmanagedBackgroundTaskEvidence(resultJson: Record<string, unknown> | null | undefined) {
+  if (!resultJson) return false;
+  if (resultJson.stopReason === UNMANAGED_BACKGROUND_TASK_STOP_REASON) return true;
+  const evidence = resultJson.unmanagedBackgroundTask;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return false;
+  const record = evidence as Record<string, unknown>;
+  return record.stopped === true &&
+    (record.stopReason === UNMANAGED_BACKGROUND_TASK_STOP_REASON ||
+      record.reason === UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON);
 }
 
 function resultFinalText(resultJson: Record<string, unknown> | null | undefined) {
@@ -326,6 +339,9 @@ export function classifyRunLiveness(input: RunLivenessClassificationInput): RunL
   }
 
   if (input.runStatus !== "succeeded") {
+    if (hasUnmanagedBackgroundTaskEvidence(input.resultJson)) {
+      return output("failed", UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON);
+    }
     return output("failed", input.errorCode ? `Run ended with ${input.runStatus} (${input.errorCode})` : `Run ended with ${input.runStatus}`);
   }
 

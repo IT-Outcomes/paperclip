@@ -5,7 +5,7 @@
  * (`GET /companies/:companyId/timeline`). Rendering is the board-locked
  * Direction C (PAP-12422): dense rows, mini-map brush, custom inline SVG.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Clock3, Coins, GanttChartSquare, Minus, Plus, RotateCcw, type LucideIcon } from "lucide-react";
 import type { WorkTimelineResult } from "@paperclipai/shared";
@@ -17,12 +17,14 @@ import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { RequestCollapsedSidebar } from "@/components/RequestCollapsedSidebar";
 import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   WorkTimelineChart,
   clampZoomScale,
   defaultZoomForWindow,
   nearestZoomForScale,
+  type VisibleTimelineWindow,
   type ZoomLevel,
   zoomScaleForLevel,
 } from "@/components/timeline/WorkTimelineChart";
@@ -88,11 +90,12 @@ function spanEndMs(span: WorkTimelineResult["spans"][number], fallbackEndMs: num
 
 function spanWindowOverlap(
   span: WorkTimelineResult["spans"][number],
+  rawFallbackEndMs: number,
   windowFromMs: number,
   windowToMs: number,
 ) {
   const rawStartMs = spanStartMs(span);
-  const rawEndMs = spanEndMs(span, windowToMs);
+  const rawEndMs = spanEndMs(span, rawFallbackEndMs);
   const startMs = Math.max(rawStartMs, windowFromMs);
   const endMs = Math.min(rawEndMs, windowToMs);
   return {
@@ -108,25 +111,34 @@ function spanWindowTokens(span: WorkTimelineResult["spans"][number], rawMs: numb
   return Math.round(totalTokens * (clippedMs / rawMs));
 }
 
-function timelineSummary(data: WorkTimelineResult) {
+function dataWindow(data: WorkTimelineResult): VisibleTimelineWindow {
+  return {
+    fromMs: new Date(data.window.from).getTime(),
+    toMs: new Date(data.window.to).getTime(),
+  };
+}
+
+export function timelineSummary(data: WorkTimelineResult, visibleWindow: VisibleTimelineWindow = dataWindow(data)) {
   const actorById = new Map(data.actors.map((actor) => [actor.id, actor]));
   const activeAgentIds = new Set<string>();
-  const windowFromMs = new Date(data.window.from).getTime();
-  const windowToMs = new Date(data.window.to).getTime();
+  const fullWindow = dataWindow(data);
+  const windowFromMs = Math.max(fullWindow.fromMs, Math.min(fullWindow.toMs, visibleWindow.fromMs));
+  const windowToMs = Math.max(windowFromMs, Math.min(fullWindow.toMs, visibleWindow.toMs));
   let activeMs = 0;
   let totalTokens = 0;
+  let runs = 0;
 
   for (const span of data.spans) {
-    if (actorById.get(span.actorId)?.type === "agent") {
-      activeAgentIds.add(span.actorId);
-    }
-    const overlap = spanWindowOverlap(span, windowFromMs, windowToMs);
+    const overlap = spanWindowOverlap(span, fullWindow.toMs, windowFromMs, windowToMs);
+    if (overlap.clippedMs <= 0) continue;
+    runs += 1;
+    if (actorById.get(span.actorId)?.type === "agent") activeAgentIds.add(span.actorId);
     activeMs += overlap.clippedMs;
     totalTokens += spanWindowTokens(span, overlap.rawMs, overlap.clippedMs);
   }
 
   return {
-    runs: data.spans.length,
+    runs,
     agents: activeAgentIds.size,
     activeMs,
     totalTokens,
@@ -234,6 +246,7 @@ export function Timeline() {
   const zoomTouched = useRef(false);
   const [rangePreset, setRangePreset] = useState<RangePreset>("7d");
   const [dateRange, setDateRange] = useState<DateRangeState>(() => presetRange("7d"));
+  const [visibleWindow, setVisibleWindow] = useState<VisibleTimelineWindow | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Timeline" }]);
@@ -258,6 +271,18 @@ export function Timeline() {
     setZoom(defaultZoom);
     setZoomScale(undefined);
   }, [data]);
+
+  useEffect(() => {
+    setVisibleWindow(null);
+  }, [data?.window.from, data?.window.to]);
+
+  const handleVisibleWindowChange = useCallback((nextWindow: VisibleTimelineWindow) => {
+    setVisibleWindow((current) => (
+      current?.fromMs === nextWindow.fromMs && current.toMs === nextWindow.toMs
+        ? current
+        : nextWindow
+    ));
+  }, []);
 
   if (!selectedCompanyId) {
     return (
@@ -292,7 +317,7 @@ export function Timeline() {
     setZoomScale(undefined);
   };
 
-  const summary = data ? timelineSummary(data) : null;
+  const summary = data ? timelineSummary(data, visibleWindow ?? dataWindow(data)) : null;
 
   const rangeControls = (
     <label className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -409,19 +434,20 @@ export function Timeline() {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="rounded-lg border border-border bg-card">
+            <Card className="block py-0">
               <TimelineLegend />
               <WorkTimelineChart
                 data={data}
                 zoom={zoom}
                 zoomScale={zoomScale}
+                onVisibleWindowChange={handleVisibleWindowChange}
                 onZoomScaleChange={(nextScale, nextZoom = nearestZoomForScale(nextScale)) => {
                   zoomTouched.current = true;
                   setZoomScale(nextScale);
                   setZoom(nextZoom);
                 }}
               />
-            </div>
+            </Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
                 {data.spans.length} run{data.spans.length === 1 ? "" : "s"} ·{" "}

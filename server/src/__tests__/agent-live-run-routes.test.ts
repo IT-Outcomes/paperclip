@@ -68,6 +68,7 @@ function registerModuleMocks() {
       hasPermission: vi.fn(async () => true),
     }),
     approvalService: () => ({}),
+    builtInAgentService: () => ({ ensureCompanyDefaultAgentGrants: vi.fn() }),
     companySkillService: () => ({ listRuntimeSkillEntries: vi.fn() }),
     budgetService: () => ({}),
     heartbeatService: () => mockHeartbeatService,
