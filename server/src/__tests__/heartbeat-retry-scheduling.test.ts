@@ -66,24 +66,6 @@ function isForeignKeyViolation(err: unknown): boolean {
   });
 }
 
-// FORK-NOTE (8a.1, 2026-09-07): executeRun keeps writing heartbeat_run_events (terminal lifecycle,
-// liveness, retry scheduling) after the run row has already left "running", so a test that returns as
-// soon as waitForRunToFinish sees a terminal status can race this cleanup: the late event insert lands
-// between the events delete and the runs delete and the runs delete fails on the FK. Reproduced 1 in 3
-// on the validate clone. Retry the pair until no late write lands between the two deletes.
-async function deleteRunsWithLateWriteRetry(db: ReturnType<typeof createDb>) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      await db.delete(heartbeatRunEvents);
-      await db.delete(heartbeatRuns);
-      return;
-    } catch (err) {
-      if (attempt >= 40 || !isForeignKeyViolation(err)) throw err;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-  }
-}
-
 describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
   let db!: ReturnType<typeof createDb>;
   let heartbeat!: ReturnType<typeof heartbeatService>;
@@ -119,22 +101,24 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
   }, 20_000);
 
   afterEach(async () => {
-    await db.delete(activityLog);
-    await db.delete(environmentLeases);
-    await db.delete(issueRelations);
-    await db.delete(issues);
-    await db.delete(executionWorkspaces);
-    await db.delete(projects);
-    await db.delete(activityLog);
-    // FORK-NOTE (8a.1, kept at 8b): upstream deletes events then runs, but executeRun can still append events
-    // after the status flip; the retry helper deletes the same pair and retries on the events FK violation.
-    await deleteRunsWithLateWriteRetry(db);
-    await db.delete(agentWakeupRequests);
-    await db.delete(agentRuntimeState);
-    await db.delete(budgetPolicies);
-    await db.delete(agents);
-    await db.delete(companySkills);
-    await db.delete(companies);
+    await db.execute(sql.raw(`
+      TRUNCATE TABLE
+        "activity_log",
+        "heartbeat_run_events",
+        "environment_leases",
+        "issue_relations",
+        "issues",
+        "execution_workspaces",
+        "projects",
+        "heartbeat_runs",
+        "agent_wakeup_requests",
+        "agent_runtime_state",
+        "budget_policies",
+        "agents",
+        "company_skills",
+        "companies"
+      CASCADE
+    `));
   });
 
   afterAll(async () => {
@@ -1476,8 +1460,7 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
     await db.delete(budgetPolicies);
     await db.delete(issueRelations);
     await db.delete(issues);
-    await db.delete(heartbeatRunEvents);
-    await db.delete(heartbeatRuns);
+    await db.execute(sql.raw(`TRUNCATE TABLE "heartbeat_run_events", "heartbeat_runs" CASCADE`));
     await db.delete(agentWakeupRequests);
     await db.delete(agentRuntimeState);
     await db.delete(agents);
@@ -2144,8 +2127,7 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
         .then((rows) => rows[0] ?? null);
       expect((wakeupRequest?.payload as Record<string, unknown> | null)?.codexTransientFallbackMode).toBe(expectedMode);
 
-      await db.delete(heartbeatRunEvents);
-      await db.delete(heartbeatRuns);
+      await db.execute(sql.raw(`TRUNCATE TABLE "heartbeat_run_events", "heartbeat_runs" CASCADE`));
       await db.delete(agentWakeupRequests);
       await db.delete(agents);
       await db.delete(companySkills);

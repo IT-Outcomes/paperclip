@@ -27,6 +27,7 @@ describe("compactRunLogChunk", () => {
     const chunk = [
       "Authorization: Bearer live-bearer-token-value",
       `export PAPERCLIP_API_KEY='paperclip-shell-secret'`,
+      `auth {"refresh_token":"refresh-token-fixture-secret"}`,
       `payload {"PAPERCLIP_API_KEY":"paperclip-json-secret"}`,
       "--paperclip-api-key=paperclip-flag-secret",
       `session=${jwtPlaceholder}`,
@@ -37,6 +38,7 @@ describe("compactRunLogChunk", () => {
     expect(compacted).toContain("***REDACTED***");
     expect(compacted).not.toContain("live-bearer-token-value");
     expect(compacted).not.toContain("paperclip-shell-secret");
+    expect(compacted).not.toContain("refresh-token-fixture-secret");
     expect(compacted).not.toContain("paperclip-json-secret");
     expect(compacted).not.toContain("paperclip-flag-secret");
     expect(compacted).not.toContain(jwtPlaceholder);
