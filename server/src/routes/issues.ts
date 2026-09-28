@@ -5202,12 +5202,9 @@ export function issueRoutes(
     validate(blockerHandoffDeclineSchema),
     async (req, res) => {
       const sourceIssueId = req.params.sourceIssueId as string;
-      const sourceIssue = await svc.getById(sourceIssueId);
-      if (!sourceIssue) {
-        res.status(404).json({ error: "Issue not found" });
-        return;
-      }
-      assertCompanyAccess(req, sourceIssue.companyId);
+      // FORK-NOTE (8e): fork route (#18) moved onto upstream's 404-not-403 helper (#3967 guard test).
+      const sourceIssue = await getAccessibleResource(req, res, svc.getById(sourceIssueId), "Issue not found");
+      if (!sourceIssue) return;
 
       const { matchedIssueId, wakeCommentId, reason } = req.body as {
         matchedIssueId: string;
