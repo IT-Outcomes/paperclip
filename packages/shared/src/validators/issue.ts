@@ -424,11 +424,23 @@ const createIssueBaseSchema = z.object({
   }).strict().optional().nullable(),
 });
 
+const createIssueDuplicateGuardSchema = {
+  idempotencyKey: z.string().trim().min(1).max(255).optional().nullable(),
+  allowDuplicate: z.boolean()
+    .describe("Bypasses recent-title duplicate detection; idempotency keys always replay their original issue")
+    .optional()
+    .default(false),
+};
+
 export const createIssueInputSchema = createIssueBaseSchema.extend({
   status: createIssueBaseSchema.shape.status.optional(),
+  ...createIssueDuplicateGuardSchema,
 });
 
+// FORK-NOTE (8f): upstream #9650 duplicate guard (idempotencyKey, allowDuplicate) combined with the fork's
+// blockParentUntilDone (#19, review handoff blocker linkage) and its parentId refinement.
 export const createIssueSchema = withCreateIssueStatusDefault(createIssueBaseSchema.extend({
+  ...createIssueDuplicateGuardSchema,
   blockParentUntilDone: z.boolean().optional().default(false),
 })).superRefine((value, ctx) => {
   if (value.blockParentUntilDone && !value.parentId) {

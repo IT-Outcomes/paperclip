@@ -201,7 +201,9 @@ const STATE_TONE: Record<RecoveryCardCardState, {
 
 const OUTCOME_LABEL: Record<IssueRecoveryActionOutcome, string> = {
   restored: "restored",
-  continued: "continued",
+  continued: "continued", // FORK-NOTE (8f): fork outcome label (ITO-2049) beside upstream #9634 labels
+  handed_back: "handed back to original owner",
+  owner_completed: "completed by recovery owner",
   delegated: "delegated to follow-up",
   false_positive: "false positive",
   blocked: "blocked",

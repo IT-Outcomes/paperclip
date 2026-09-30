@@ -322,7 +322,9 @@ export type IssueRecoveryActionOwnerType = (typeof ISSUE_RECOVERY_ACTION_OWNER_T
 
 export const ISSUE_RECOVERY_ACTION_OUTCOMES = [
   "restored",
-  "continued",
+  "continued", // FORK-NOTE (8f): fork outcome (ITO-2049) kept beside upstream #9634 handed_back and owner_completed
+  "handed_back",
+  "owner_completed",
   "delegated",
   "false_positive",
   "blocked",
@@ -442,6 +444,8 @@ export type IssueMonitorScheduledBy = (typeof ISSUE_MONITOR_SCHEDULED_BY)[number
 
 export const ISSUE_EXECUTION_MONITOR_KINDS = ["external_service"] as const;
 export type IssueExecutionMonitorKind = (typeof ISSUE_EXECUTION_MONITOR_KINDS)[number];
+
+export const PROVIDER_QUOTA_MONITOR_SERVICE_NAME = "AI provider quota";
 
 export const ISSUE_EXECUTION_MONITOR_RECOVERY_POLICIES = [
   "wake_owner",
@@ -918,6 +922,7 @@ export const PERMISSION_KEYS = [
   "tools:view_audit",
   "tools:use",
   "tools:manage_runtime",
+  "inbox:manage",
   "users:invite",
   "users:manage_permissions",
   "tasks:assign",
