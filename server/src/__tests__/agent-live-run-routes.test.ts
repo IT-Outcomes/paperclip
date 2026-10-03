@@ -30,6 +30,10 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
   listCompanyIds: vi.fn(),
 }));
 
+const mockRunSecretRedactionRegistry = vi.hoisted(() => ({
+  redactForRun: vi.fn(async (_companyId: string, _runId: string, value: unknown) => value),
+}));
+
 const routeAgentId = "11111111-1111-4111-8111-111111111111";
 
 function registerModuleMocks() {
@@ -52,6 +56,10 @@ function registerModuleMocks() {
 
   vi.doMock("../services/issues.js", () => ({
     issueService: () => mockIssueService,
+  }));
+
+  vi.doMock("../services/run-secret-redaction.js", () => ({
+    createRunSecretRedactionRegistry: () => mockRunSecretRedactionRegistry,
   }));
 
   vi.doMock("../services/index.js", () => ({
