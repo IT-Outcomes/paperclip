@@ -1148,7 +1148,7 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
+        adapterType: "codex_local",
         adapterConfig: {},
         runtimeConfig: {
           heartbeat: {
@@ -1167,9 +1167,77 @@ describe.sequential("agent permission routes", () => {
             intervalSec: 3600,
             maxConcurrentRuns: 20,
           },
+          modelProfiles: {
+            cheap: { enabled: false },
+          },
         },
       }),
     );
+  });
+
+  it("creates agents when optional adapter model profile discovery fails", async () => {
+    const { registerServerAdapter, unregisterServerAdapter } = await import("../adapters/index.js");
+    registerServerAdapter({
+      type: "failing_profile_discovery",
+      execute: async () => ({ exitCode: 0, signal: null, timedOut: false }),
+      testEnvironment: async () => ({
+        adapterType: "failing_profile_discovery",
+        status: "pass",
+        checks: [],
+        testedAt: new Date(0).toISOString(),
+      }),
+      listModelProfiles: async () => {
+        throw new Error("profile discovery unavailable");
+      },
+    });
+
+    try {
+      const app = await createApp({
+        type: "board",
+        userId: "board-user",
+        source: "local_implicit",
+        isInstanceAdmin: true,
+        companyIds: [companyId],
+      });
+
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .post(`/api/companies/${companyId}/agents`)
+        .send({
+          name: "Builder",
+          role: "engineer",
+          adapterType: "failing_profile_discovery",
+          adapterConfig: {},
+          runtimeConfig: {
+            modelProfiles: {
+              cheap: {
+                enabled: true,
+                adapterConfig: {},
+              },
+            },
+          },
+        }));
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockAgentService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({
+          runtimeConfig: {
+            heartbeat: {
+              enabled: false,
+              maxConcurrentRuns: 20,
+            },
+            modelProfiles: {
+              cheap: {
+                enabled: true,
+                adapterConfig: {},
+              },
+            },
+          },
+        }),
+      );
+    } finally {
+      unregisterServerAdapter("failing_profile_discovery");
+    }
   });
 
   it("seeds opencode agent creation with the static default model without live discovery", async () => {
@@ -1258,7 +1326,7 @@ describe.sequential("agent permission routes", () => {
       .send({
         name: "Builder",
         role: "engineer",
-        adapterType: "process",
+        adapterType: "codex_local",
         adapterConfig: {},
         runtimeConfig: {
           heartbeat: {
@@ -1276,6 +1344,9 @@ describe.sequential("agent permission routes", () => {
             enabled: false,
             intervalSec: 3600,
             maxConcurrentRuns: 20,
+          },
+          modelProfiles: {
+            cheap: { enabled: false },
           },
         },
       }),
