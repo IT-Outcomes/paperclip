@@ -269,7 +269,7 @@ describe("agent local JWT", () => {
 
   // FORK-NOTE (hop 5; re-confirmed hop 7, v2026.707): ITO keeps a 6h default local-agent
   // JWT TTL (DEFAULT_LOCAL_AGENT_JWT_TTL_SECONDS = 60*60*6) so long-running agent sessions
-  // don't have their token expire mid-run; upstream defaults this to 1h. Merged source
+  // don't have their token expire mid-run; upstream defaulted this to 1h and from 824.0 to 48h (#10176). Merged source
   // (agent-auth-jwt.ts:44) keeps the fork constant, so name + assertion stay at 6h.
   it("defaults TTL to 6h (ITO fork) when PAPERCLIP_AGENT_JWT_TTL_SECONDS is unset", () => {
     delete process.env[ttlEnv];

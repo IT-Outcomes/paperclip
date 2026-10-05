@@ -43,6 +43,9 @@ function jwtConfig() {
 
   return {
     secret,
+    // FORK-NOTE (8l): ITO keeps its 6 h default (the fork constant above); upstream moved from 1 h to
+    // 48 h (#10176, laptop-suspend gaps). The fork's run-bound check (middleware/auth.ts) already makes a token
+    // dead once its run ends, so no live behaviour changes; adopting 48 h is a decision for Jason (fork shrink).
     ttlSeconds: parseNumber(process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS, DEFAULT_LOCAL_AGENT_JWT_TTL_SECONDS),
     issuer: process.env.PAPERCLIP_AGENT_JWT_ISSUER ?? "paperclip",
     audience: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ?? "paperclip-api",
@@ -184,7 +187,7 @@ export function verifyLocalAgentJwt(token: string): LocalAgentJwtClaims | null {
   // bounds the legacy window naturally).
   //
   // Operators should set `PAPERCLIP_AGENT_JWT_DISABLE_LEGACY_FALLBACK=true`
-  // approximately one JWT TTL (~1h by default, see PAPERCLIP_AGENT_JWT_TTL_SECONDS)
+  // approximately one JWT TTL (~48h by default, see PAPERCLIP_AGENT_JWT_TTL_SECONDS)
   // after deploying per-company signing. Once set, the master-secret fallback
   // is disabled and only tokens validating under the per-instance/per-company
   // derived key are accepted — closing the window in which a leaked master
