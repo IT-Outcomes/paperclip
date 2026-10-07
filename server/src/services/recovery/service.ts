@@ -679,6 +679,19 @@ function isProductiveContinuationRun(latestRun: LatestIssueRun) {
       latestRun.livenessState === "needs_followup");
 }
 
+function isPinnedLiveChatAnchorIssue(issue: Pick<typeof issues.$inferSelect, "title" | "description">) {
+  const title = issue.title.trim().toLowerCase();
+  const text = `${title}\n${issue.description ?? ""}`.toLowerCase();
+  const explicitlyPinned = title.startsWith("[pin open]") || /\bpin(?:ned)?\s+open\b/.test(text);
+  if (!explicitlyPinned) return false;
+  return (
+    /\bchat\s+mirror\b/.test(text) ||
+    /\bchat\s+anchor\b/.test(text) ||
+    /\blive\s+teams\s+chat\b/.test(text) ||
+    /\btickets\s+only\b/.test(text)
+  );
+}
+
 function isRepeatedProductiveContinuationRecovery(latestRun: SuccessfulLatestIssueRun) {
   const latestContext = parseObject(latestRun.contextSnapshot);
   return readNonEmptyString(latestContext.retryReason) === "issue_continuation_needed" &&
@@ -801,10 +814,11 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
   }
 
   // FORK-NOTE (8b, 2026-09-26): the reconcile-path stream-disconnect and context-overflow auto-recovery helpers
-  // (matchesStreamDisconnectFailure, matchesContextOverflowFailure, readAutoResetState, nextAutoResetState) and
-  // isPinnedLiveChatAnchorIssue were retired here under Jason's option (a) of 7 Sep 2026: their call sites were
-  // lost at the hop 6 merge (28e386d5a) and upstream's continuation recovery serves the reconcile path. The two
-  // state helpers below stay because the silent-hang watchdog (scanAdapterSilentHangs, ITO-2214) calls them.
+  // (matchesStreamDisconnectFailure, matchesContextOverflowFailure, readAutoResetState, nextAutoResetState) were
+  // retired here under Jason's option (a) of 7 Sep 2026 after their call sites were lost at the hop 6 merge
+  // (28e386d5a). The pinned live-chat anchor guard was restored separately because a successful idle anchor run
+  // must remain open without creating another continuation wake. The two state helpers below stay because the
+  // silent-hang watchdog (scanAdapterSilentHangs, ITO-2214) calls them.
   // The finalisation-path copies in heartbeat.ts (releaseIssueExecutionAndPromote) are live and unchanged.
   function readStreamDisconnectState(stateJson: Record<string, unknown> | null | undefined) {
     const root = parseObject(stateJson);
@@ -4469,6 +4483,15 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         result.skipped += 1;
         continue;
       }
+      // An explicitly pinned live-chat issue is intentionally left open between
+      // inbound comments. A successful handling run is therefore an idle state,
+      // not stranded work that needs another no-op continuation wake.
+      if (isPinnedLiveChatAnchorIssue(issue) && latestRun?.status === "succeeded") {
+        result.successfulContinuationObserved += 1;
+        result.skipped += 1;
+        continue;
+      }
+
       const handoffEvidence = isExhaustedSuccessfulRunHandoff(latestRun);
       if (handoffEvidence) {
         if (isPluginManagedIssueLifecycle(issue)) {
