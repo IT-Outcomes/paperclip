@@ -130,8 +130,10 @@ describe("actorMiddleware authenticated session profile", () => {
       .set("Authorization", "Bearer definitely-not-valid")
       .send({ status: "done" });
 
+    // FORK-NOTE (8m-b, 2026-10-07): upstream 831.1 adopted the fork's fail-closed 401 for an unverified bearer token
+    // with its own message; the fork keeps "Invalid bearer token" only for its run-bound JWT checks.
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: "Invalid bearer token" });
+    expect(res.body).toEqual({ error: "Agent token did not verify; obtain fresh credentials and retry" });
   });
 
   it("keeps local trusted implicit board access when no bearer token is sent", async () => {
